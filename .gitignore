@@ -1,0 +1,6 @@
+数据目录默认落在 ./data，里面是 SQLite 数据库与 blob 文件，不要提交进仓库。
+node_modules/
+data/
+*.log
+.DS_Store
+.env

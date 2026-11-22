@@ -1,0 +1,20 @@
+services:
+  private-cloud:
+    build: .
+    image: dsh-workbench-private-cloud:latest
+    restart: unless-stopped
+    ports:
+      - "8792:8792"
+    environment:
+      # 必须改成自己的随机密钥（至少 16 位）。
+      WB_PRIVATE_SECRET: ${WB_PRIVATE_SECRET:?请先设置 WB_PRIVATE_SECRET}
+      WB_PRIVATE_SERVER_NAME: ${WB_PRIVATE_SERVER_NAME:-我的私人云端}
+      WB_PRIVATE_MAX_FILE_BYTES: ${WB_PRIVATE_MAX_FILE_BYTES:-209715200}
+      WB_PRIVATE_QUOTA_BYTES: ${WB_PRIVATE_QUOTA_BYTES:-21474836480}
+      # 部署在 HTTPS 反向代理之后时再打开，否则客户端 IP 会全部记成代理地址。
+      WB_PRIVATE_TRUST_PROXY: ${WB_PRIVATE_TRUST_PROXY:-0}
+    volumes:
+      - private-cloud-data:/data
+
+volumes:
+  private-cloud-data:
