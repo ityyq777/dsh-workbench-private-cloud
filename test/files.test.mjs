@@ -38,7 +38,7 @@ test("上传后 check 能命中，未引用时下载返回 404", async () => {
 
   const orphan = await call(app.base, "GET", "/v1/files/blobs/" + sha);
   assert.equal(orphan.status, 404);
-  assert.equal(orphan.json.error, "blob_not_referenced");
+  assert.equal(orphan.json.code, "blob_not_referenced");
 });
 
 test("同步 file 行建立引用后可以下载、支持 Range 与 HEAD", async () => {
@@ -86,8 +86,8 @@ test("sha256 与内容不符返回 422，非法 sha 返回 400", async () => {
   const wrong = "a".repeat(64);
   const res = await call(app.base, "PUT", "/v1/files/blobs/" + wrong, { body: Buffer.from("内容不同"), binary: true });
   assert.equal(res.status, 422);
-  assert.equal(res.json.error, "sha256_mismatch");
+  assert.equal(res.json.code, "sha256_mismatch");
   const bad = await call(app.base, "PUT", "/v1/files/blobs/xyz", { body: Buffer.from("x"), binary: true });
   assert.equal(bad.status, 400);
-  assert.equal(bad.json.error, "invalid_sha256");
+  assert.equal(bad.json.code, "invalid_sha256");
 });

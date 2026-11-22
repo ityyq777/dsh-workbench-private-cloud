@@ -62,10 +62,10 @@ export function sendJson(res, status, body, headers = {}) {
 
 export function sendError(res, err, log) {
   if (err instanceof ApiError) {
-    sendJson(res, err.status, { ok: false, error: err.code, message: err.message, ...(err.details ?? {}) });
+    sendJson(res, err.status, { ok: false, code: err.code, error: err.message, ...(err.details ?? {}) });
     return;
   }
   const message = String(err?.message || err);
   log?.("请求处理失败", message);
-  sendJson(res, 500, { ok: false, error: "internal_error", message });
+  sendJson(res, 500, { ok: false, error: "internal error" });
 }

@@ -17,7 +17,7 @@ test("协议版本不是 2 返回 426", async () => {
   await withApp(async (app) => {
     const res = await call(app.base, "POST", "/v1/sync/open", { body: { protocol: 1, device_id: "device-a" } });
     assert.equal(res.status, 426);
-    assert.equal(res.json.error, "protocol_required");
+    assert.equal(res.json.code, "protocol_required");
   });
 });
 
@@ -25,7 +25,7 @@ test("device_id 缺失返回 400", async () => {
   await withApp(async (app) => {
     const res = await call(app.base, "POST", "/v1/sync/open", { body: { protocol: 2, device_id: "  " } });
     assert.equal(res.status, 400);
-    assert.equal(res.json.error, "invalid_device");
+    assert.equal(res.json.code, "invalid_device");
   });
 });
 
@@ -34,7 +34,7 @@ test("另一台设备并发同步返回 409 sync_locked", async () => {
     const first = await openSession(app.base, "lock-a");
     const blocked = await call(app.base, "POST", "/v1/sync/open", { body: { protocol: 2, device_id: "lock-b" } });
     assert.equal(blocked.status, 409);
-    assert.equal(blocked.json.error, "sync_locked");
+    assert.equal(blocked.json.code, "sync_locked");
     assert.ok(blocked.json.retry_after_ms > 0);
     await call(app.base, "POST", "/v1/sync/close", { body: { session_id: first.session_id, device_id: "lock-a", success: false } });
     const again = await openSession(app.base, "lock-b");
@@ -127,7 +127,7 @@ test("snapshot 返回行与版本，full 版本冲突后能重置", async () => 
       body: { ...body, table: "note", base_version: version, rows: [] },
     });
     assert.equal(stale.status, 409);
-    assert.equal(stale.json.error, "version_conflict");
+    assert.equal(stale.json.code, "version_conflict");
 
     const snap = await call(app.base, "POST", "/v1/sync/snapshot", { body: { ...body, table: "note" } });
     assert.equal(snap.json.rows.length, 1);
@@ -142,9 +142,9 @@ test("会话不匹配或过期返回 401", async () => {
       body: { session_id: session.session_id, device_id: "other-device", cursors: {} },
     });
     assert.equal(wrong.status, 401);
-    assert.equal(wrong.json.error, "session_device_mismatch");
+    assert.equal(wrong.json.code, "session_device_mismatch");
     const bogus = await call(app.base, "POST", "/v1/sync/pull", { body: { session_id: "not-a-session", device_id: "sess-a", cursors: {} } });
     assert.equal(bogus.status, 401);
-    assert.equal(bogus.json.error, "session_not_found");
+    assert.equal(bogus.json.code, "session_not_found");
   });
 });

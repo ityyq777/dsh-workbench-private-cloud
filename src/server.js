@@ -71,9 +71,9 @@ export function createApp({ db, config, log = () => {} }) {
     if (!verdict.ok) {
       if (verdict.blocked) {
         res.setHeader("retry-after", String(Math.ceil((verdict.retryAfterMs ?? 0) / 1000)));
-        sendJson(res, 429, { ok: false, error: "too_many_attempts", message: "鉴权失败次数过多，请稍后再试" });
+        sendJson(res, 429, { ok: false, code: "too_many_attempts", error: "鉴权失败次数过多，请稍后再试" });
       } else {
-        sendJson(res, 401, { ok: false, error: "unauthorized", message: "访问密钥不正确" });
+        sendJson(res, 401, { ok: false, code: "unauthorized", error: "访问密钥不正确" });
       }
       return;
     }

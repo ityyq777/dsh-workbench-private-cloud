@@ -25,7 +25,7 @@ test("缺少或错误的密钥返回 401", async () => {
   assert.equal(anon.status, 401);
   const wrong = await call(app.base, "GET", "/v1/me", { token: "wrong-secret-value-1234" });
   assert.equal(wrong.status, 401);
-  assert.equal(wrong.json.error, "unauthorized");
+  assert.equal(wrong.json.code, "unauthorized");
 });
 
 test("正确密钥返回单用户信息与文件配额", async () => {
@@ -45,7 +45,7 @@ test("连续错误密钥会被限流", async () => {
       last = await call(ipApp.base, "GET", "/v1/me", { token: "bad-secret-" + i });
     }
     assert.equal(last.status, 429);
-    assert.equal(last.json.error, "too_many_attempts");
+    assert.equal(last.json.code, "too_many_attempts");
     assert.ok(Number(last.headers.get("retry-after")) > 0);
   } finally {
     await ipApp.close();
