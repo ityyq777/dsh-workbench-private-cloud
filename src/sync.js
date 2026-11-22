@@ -42,11 +42,10 @@ export function createSync({ db, config, now = () => Date.now(), applyFileRef = 
     return db.prepare("SELECT session_id, device_id, expires_at FROM sync_sessions WHERE id=1").get();
   }
 
-  /** 校验会话归属与有效期；不合法统一 401 session_*，让宿主重新 open。 */
-  function touch(sessionId, deviceId) {
+  /** 校验会话有效期；不合法统一 401 session_*，让宿主重新 open。 */
+  function touch(sessionId) {
     const cur = session();
     if (!cur || cur.session_id !== sessionId) throw new ApiError(401, "session_not_found", "同步会话不存在或已过期");
-    if (cur.device_id !== deviceId) throw new ApiError(401, "session_device_mismatch", "同步会话不属于当前设备");
     if (Number(cur.expires_at) <= now()) {
       db.prepare("DELETE FROM sync_sessions WHERE id=1").run();
       throw new ApiError(401, "session_expired", "同步会话已过期");
@@ -54,12 +53,19 @@ export function createSync({ db, config, now = () => Date.now(), applyFileRef = 
     return cur;
   }
 
+  /**
+   * 会话即设备身份：device_id 由 open 写进会话，后续请求只认 session_id。
+   * 宿主协议不带 device_id，若客户端显式传了就必须与会话一致。
+   */
   function requireSessionBody(body) {
     const sessionId = textOf(body, "session_id");
     if (!sessionId) throw badRequest("invalid_session", "session_id 必填");
-    const deviceId = textOf(body, "device_id");
-    if (!deviceId) throw badRequest("invalid_device", "device_id 必填");
-    return { sessionId, deviceId };
+    const cur = touch(sessionId);
+    const claimed = textOf(body, "device_id");
+    if (claimed && claimed !== cur.device_id) {
+      throw new ApiError(401, "session_device_mismatch", "同步会话不属于当前设备");
+    }
+    return { sessionId, deviceId: cur.device_id };
   }
 
   /** 打开同步会话；同设备允许重开，换设备则返回 409 sync_locked。 */
@@ -110,7 +116,7 @@ export function createSync({ db, config, now = () => Date.now(), applyFileRef = 
     const changes = body.changes;
     if (!Array.isArray(changes)) throw badRequest("invalid_changes", "changes 必须是数组");
     if (changes.length > MAX_PUSH_ITEMS) throw new ApiError(413, "too_many_changes", "单批变更过多");
-    touch(sessionId, deviceId);
+    touch(sessionId);
 
     const results = [];
     const accepted = [];
@@ -230,7 +236,7 @@ export function createSync({ db, config, now = () => Date.now(), applyFileRef = 
 
   function pull(body) {
     const { sessionId, deviceId } = requireSessionBody(body);
-    touch(sessionId, deviceId);
+    touch(sessionId);
     const cursors = {};
     if (body.cursors && typeof body.cursors === "object" && !Array.isArray(body.cursors)) {
       for (const [table, value] of Object.entries(body.cursors)) {
@@ -289,7 +295,7 @@ export function createSync({ db, config, now = () => Date.now(), applyFileRef = 
 
   function snapshot(body) {
     const { sessionId, deviceId } = requireSessionBody(body);
-    touch(sessionId, deviceId);
+    touch(sessionId);
     const table = assertTable(body.table ?? body.table_name);
     const rows = db
       .prepare("SELECT payload FROM row_states WHERE table_name=? ORDER BY row_id ASC LIMIT ?")
@@ -310,7 +316,7 @@ export function createSync({ db, config, now = () => Date.now(), applyFileRef = 
 
   function full(body) {
     const { sessionId, deviceId } = requireSessionBody(body);
-    touch(sessionId, deviceId);
+    touch(sessionId);
     const table = assertTable(body.table ?? body.table_name);
     const baseVersion = intOf(body, "base_version");
     if (baseVersion === null || baseVersion < 0) throw badRequest("invalid_base_version", "base_version 必须是非负整数");
