@@ -7,6 +7,8 @@ import { createFiles } from "./files.js";
 import { createSync } from "./sync.js";
 import { ApiError, readJson, sendError, sendJson } from "./http.js";
 import { newId } from "./util.js";
+import { buildStats } from "./stats.js";
+import { dashboardHtml } from "./dashboard.js";
 
 const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
@@ -23,6 +25,7 @@ export function createApp({ db, config, log = () => {} }) {
   const files = createFiles({ db, config, dataDir: config.dataDir });
   const sync = createSync({ db, config, applyFileRef: files.applyFileRef });
   ensureMeta(db, "instance_id", () => newId());
+  const startedAt = Date.now();
 
   function health() {
     return {
@@ -58,7 +61,26 @@ export function createApp({ db, config, log = () => {} }) {
     const m = req.method ?? "GET";
 
     if (p === "/" && m === "GET") {
-      sendJson(res, 200, { ...health(), endpoints: ["/v1/health", "/v1/me", "/v1/sync/*", "/v1/files/*"] });
+      // 浏览器直接访问给概览页；脚本/探针仍拿 JSON，保持旧行为。
+      if (String(req.headers.accept ?? "").includes("text/html")) {
+        const page = dashboardHtml(config);
+        res.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+          "content-length": Buffer.byteLength(page),
+          "cache-control": "no-store",
+        });
+        res.end(page);
+        return;
+      }
+      sendJson(res, 200, {
+        ...health(),
+        endpoints: ["/v1/health", "/v1/me", "/v1/stats", "/v1/sync/*", "/v1/files/*"],
+        dashboard: "用浏览器打开本地址可查看概览页",
+      });
+      return;
+    }
+    if (p === "/favicon.ico" && m === "GET") {
+      res.writeHead(204).end();
       return;
     }
     if (p === "/v1/health" && m === "GET") {
@@ -80,6 +102,10 @@ export function createApp({ db, config, log = () => {} }) {
 
     if (p === "/v1/me" && m === "GET") {
       sendJson(res, 200, me());
+      return;
+    }
+    if (p === "/v1/stats" && m === "GET") {
+      sendJson(res, 200, buildStats({ db, config, files, startedAt, version: VERSION }));
       return;
     }
     const revoke = /^\/v1\/devices\/([^/]+)$/.exec(p);
