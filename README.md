@@ -11,12 +11,16 @@ DSH Workbench 的**私人云端**：单用户、多设备的数据同步与文�
 ## 快速开始
 
 ```bash
-# 1. 生成访问密钥（至少 16 位）
-export WB_PRIVATE_SECRET="$(openssl rand -hex 32)"
+# 1. 生成访问密钥（至少 16 位）写进 .env
+echo "WB_PRIVATE_SECRET=$(openssl rand -hex 32)" > .env
 
 # 2. 启动（默认监听 0.0.0.0:8792，数据在 ./data）
 npm start
 ```
+
+`.env` 会在启动时自动加载（已有同名环境变量优先，不会被文件覆盖），所以不需要
+`source .env`——那样只会设置 shell 变量、不 export，Node 进程读不到。想用别的文件可以设
+`WB_PRIVATE_SECRET_FILE=/绝对路径`。
 
 启动后先用健康检查确认：
 

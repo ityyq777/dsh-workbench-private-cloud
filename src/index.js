@@ -1,10 +1,17 @@
 #!/usr/bin/env node
 // 私人云端入口：读取环境变量、打开 SQLite、启动 HTTP 服务。
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { loadEnvFile } from "./env-file.js";
 import { loadConfig } from "./config.js";
 import { openDb } from "./db.js";
 import { createApp } from "./server.js";
 
 function main() {
+  // 先看当前目录的 .env（`node src/index.js` 与 `npm start` 都落在仓库根），再按需读入口同级目录。
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  loadEnvFile(process.cwd());
+  loadEnvFile(path.join(here, ".."));
   let config;
   try {
     config = loadConfig();
