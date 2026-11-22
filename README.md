@@ -31,6 +31,28 @@ curl -s http://127.0.0.1:8792/v1/health
 
 宿主端在「设置 → 账号」里把云端类型切到“私人云端”，填入服务端地址与同一把密钥即可。
 
+## 命令行工具
+
+`bin/wb-private-cloud.mjs` 负责「后台跑起来」这件麻烦事：写 PID 文件、日志重定向到数据目录、
+等健康检查通过再返回。直接用 Node 运行即可，也可以 `npm link` 后全局调用 `wb-private-cloud`。
+
+```bash
+node bin/wb-private-cloud.mjs init      # 在当前目录生成 .env（随机 64 位密钥，不覆盖）
+node bin/wb-private-cloud.mjs start     # 后台启动，打印地址与概览页链接
+node bin/wb-private-cloud.mjs status    # 是否运行、PID、地址、服务名与版本
+node bin/wb-private-cloud.mjs logs -f   # 跟踪日志（默认最近 50 行，--lines N 可调）
+node bin/wb-private-cloud.mjs restart   # 重启（改完配置或升级后最常用）
+node bin/wb-private-cloud.mjs stop      # 停止（10 秒不退则 SIGKILL）
+node bin/wb-private-cloud.mjs open      # 在浏览器打开概览页
+```
+
+- `start --foreground` 就是前台运行，等价于 `npm start`，适合调试；
+- 端口、数据目录、监听地址、服务名称都可以用通用选项覆盖：
+  `--port 8792 --data ./data --bind 0.0.0.0 --name "我的云端"`，或对应环境变量，或 `.env`；
+- PID 文件与日志都在数据目录：`private-cloud.pid`、`private-cloud.log`；
+- `stop`/`status` 只读数据目录，即使 `.env` 缺密钥也能用（会提示健康检查失败但不报配置错）；
+- 退出码：`status` 运行且健康为 0、进程在但健康检查失败为 1、未运行为 3；`start` 已在运行为 1。
+
 ## 浏览器概览页
 
 启动后用浏览器直接打开服务地址（例如 `http://127.0.0.1:8792/`），输入访问密钥即可看到：
@@ -136,7 +158,7 @@ location / {
 ## 开发
 
 ```bash
-npm test          # node --test，20 个用例覆盖鉴权、同步协议、文件接口与概览页
+npm test          # node --test，23 个用例覆盖鉴权、同步协议、文件接口、概览页与 CLI
 npm start
 ```
 

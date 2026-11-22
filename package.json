@@ -5,14 +5,25 @@
   "type": "module",
   "main": "src/index.js",
   "bin": {
-    "wb-private-cloud": "src/index.js"
+    "wb-private-cloud": "bin/wb-private-cloud.mjs"
   },
   "scripts": {
     "start": "node src/index.js",
+    "start:cli": "node bin/wb-private-cloud.mjs start",
+    "stop": "node bin/wb-private-cloud.mjs stop",
+    "status": "node bin/wb-private-cloud.mjs status",
     "test": "node --test test/*.test.mjs"
   },
   "engines": {
     "node": ">=22.5"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "Dockerfile",
+    "docker-compose.yml",
+    ".env.example"
+  ]
 }
