@@ -73,6 +73,23 @@ test("start/status/restart/stop 完整生命周期", async () => {
   }
 });
 
+test("端口被占用时 start 失败并给出可读原因", async () => {
+  const a = fixture();
+  const b = fixture();
+  const envB = { ...b.env, WB_PRIVATE_PORT: String(a.port) };
+  try {
+    assert.equal((await cli(["start"], a.env)).code, 0);
+    const conflict = await cli(["start"], envB);
+    assert.equal(conflict.code, 1);
+    assert.match(conflict.stderr, /已被占用/);
+    assert.equal(existsSync(path.join(b.dir, "private-cloud.pid")), false);
+  } finally {
+    await cli(["stop"], a.env);
+    a.cleanup();
+    b.cleanup();
+  }
+});
+
 test("init 生成 .env 且不覆盖已有文件", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "wb-cli-init-"));
   try {

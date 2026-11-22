@@ -51,6 +51,7 @@ node bin/wb-private-cloud.mjs open      # 在浏览器打开概览页
   `--port 8792 --data ./data --bind 0.0.0.0 --name "我的云端"`，或对应环境变量，或 `.env`；
 - PID 文件与日志都在数据目录：`private-cloud.pid`、`private-cloud.log`；
 - `stop`/`status` 只读数据目录，即使 `.env` 缺密钥也能用（会提示健康检查失败但不报配置错）；
+- 端口被占用时 `start` 会直接失败并打印可读原因（不会留下 PID 文件或半启动进程）；
 - 退出码：`status` 运行且健康为 0、进程在但健康检查失败为 1、未运行为 3；`start` 已在运行为 1。
 
 ## 浏览器概览页
@@ -158,7 +159,7 @@ location / {
 ## 开发
 
 ```bash
-npm test          # node --test，23 个用例覆盖鉴权、同步协议、文件接口、概览页与 CLI
+npm test          # node --test，24 个用例覆盖鉴权、同步协议、文件接口、概览页与 CLI
 npm start
 ```
 

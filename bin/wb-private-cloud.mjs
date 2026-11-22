@@ -56,16 +56,23 @@ function applyOverrides(opts) {
   if (opts.values.name) process.env.WB_PRIVATE_SERVER_NAME = String(opts.values.name);
 }
 
+/** 先补齐 .env（当前目录优先，再补仓库根），并让数据目录默认落在包内，避免随 cwd 漂移。 */
+function prepareEnv() {
+  loadEnvFile(process.cwd());
+  loadEnvFile(ROOT);
+  if (!process.env.WB_PRIVATE_DATA) process.env.WB_PRIVATE_DATA = path.join(ROOT, "data");
+}
+
 /** 读取配置；失败时抛错（由调用方决定是提示还是忽略）。 */
 function readConfig() {
-  loadEnvFile(process.cwd());
+  prepareEnv();
   return loadConfig(process.env);
 }
 
 /** stop/status 只关心数据目录，配置不全（例如没写密钥）也应能定位 PID 文件。 */
 function dataDirOnly() {
-  loadEnvFile(process.cwd());
-  return path.resolve(String(process.env.WB_PRIVATE_DATA ?? "./data"));
+  prepareEnv();
+  return path.resolve(String(process.env.WB_PRIVATE_DATA));
 }
 
 function pidPath(dataDir) {
@@ -151,7 +158,7 @@ async function cmdStart(opts) {
   }
   if (opts.flags.has("foreground")) {
     console.log("前台运行，按 Ctrl+C 停止：" + baseUrl(config));
-    const child = spawn(process.execPath, [ENTRY], { stdio: "inherit", cwd: process.cwd(), env: process.env });
+    const child = spawn(process.execPath, [ENTRY], { stdio: "inherit", cwd: ROOT, env: process.env });
     return new Promise((resolve) => child.on("exit", (code) => resolve(code ?? 0)));
   }
   mkdirSync(config.dataDir, { recursive: true });
@@ -160,14 +167,16 @@ async function cmdStart(opts) {
   const child = spawn(process.execPath, [ENTRY], {
     detached: true,
     stdio: ["ignore", fd, fd],
-    cwd: process.cwd(),
+    cwd: ROOT,
     env: process.env,
   });
   child.unref();
   closeSync(fd);
   writeFileSync(pidPath(config.dataDir), String(child.pid) + "\n");
   const h = await waitHealthy(config, 8000);
-  if (!h) {
+  // 端口被别的实例占用时，健康检查照样通过；等一拍再确认子进程是否真的活着。
+  if (h) await sleep(400);
+  if (!h || !alive(child.pid)) {
     console.error("启动失败或超时，最近日志：");
     for (const line of tailLines(log, 20)) console.error("  " + line);
     rmSync(pidPath(config.dataDir), { force: true });
@@ -176,6 +185,11 @@ async function cmdStart(opts) {
     } catch {
       /* 已退出 */
     }
+    return 1;
+  }
+  if (!alive(child.pid)) {
+    console.error("端口 " + config.port + " 上已有别的服务在响应，本次启动的进程未存活，请先停止占用者。");
+    rmSync(pidPath(config.dataDir), { force: true });
     return 1;
   }
   console.log("已启动（PID " + child.pid + "）：" + baseUrl(config));
@@ -229,7 +243,8 @@ async function cmdStatus() {
   }
   const base = config ? baseUrl(config) : null;
   const h = base ? await health(base) : { ok: false };
-  console.log("状态：" + (pid && h.ok ? "运行中" : pid ? "进程在、健康检查失败" : "未运行"));
+  const label = pid && h.ok ? "运行中" : pid ? "进程在、健康检查失败" : h.ok ? "运行中（未由 CLI 管理，缺少 PID 文件）" : "未运行";
+  console.log("状态：" + label);
   if (pid) console.log("  PID：" + pid);
   if (base) console.log("  地址：" + base);
   if (h.ok) {
@@ -239,7 +254,7 @@ async function cmdStatus() {
     console.log("  健康检查：" + h.error);
   }
   if (config) console.log("  数据：" + config.dataDir);
-  return pid && h.ok ? 0 : pid ? 1 : 3;
+  return h.ok ? 0 : pid ? 1 : 3;
 }
 
 function cmdLogs(opts) {

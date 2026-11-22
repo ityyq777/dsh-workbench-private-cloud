@@ -26,6 +26,24 @@ function main() {
     log: (...args) => console.error(new Date().toISOString(), ...args),
   });
 
+  // 端口被占用等启动错误直接给出可读提示，不打印整段堆栈。
+  server.on("error", (e) => {
+    const code = e && e.code ? e.code : "";
+    if (code === "EADDRINUSE") {
+      console.error("端口 " + config.port + " 已被占用（" + config.host + "），请换端口或先停止占用它的进程。");
+    } else if (code === "EACCES") {
+      console.error("没有权限监听 " + config.host + ":" + config.port + "，请换端口或用更高权限运行。");
+    } else {
+      console.error("服务启动失败：" + String((e && e.message) || e));
+    }
+    try {
+      db.close();
+    } catch {
+      /* ignore */
+    }
+    process.exit(1);
+  });
+
   server.listen(config.port, config.host, () => {
     const shown = config.host === "0.0.0.0" ? "本机所有网卡" : config.host;
     console.log("DSH Workbench 私人云端已启动");
