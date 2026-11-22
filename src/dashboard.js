@@ -32,6 +32,13 @@ export function dashboardHtml(config) {
     '<div class="card wide"><h2>设备</h2><div id="devices"></div></div>',
     '<div class="card wide"><h2>数据表</h2><div id="tables"></div></div>',
     '<div class="card wide"><h2>当前同步会话</h2><div id="session"></div></div>',
+    '<div class="card wide danger">',
+    "<h2>数据清空</h2>",
+    '<p class="hint">删除本服务上的全部同步数据、设备记录与文件，实例身份保留。此操作不可撤销，且不会自动通知已连接的设备。</p>',
+    '<ul class="scope"><li>业务表全部行：任务、标签、站点、储物、邮件等</li><li>变更日志、行状态、表版本与同步会话</li><li>设备记录与 blob 文件</li></ul>',
+    '<div class="row"><input id="clear-input" type="text" placeholder="输入：清空云端数据" autocomplete="off"><button id="clear-go" class="danger" disabled>清空云端数据</button></div>',
+    '<p class="err" id="clear-err"></p>',
+    "</div>",
     "</section>",
     "</main>",
     '<footer class="foot"><span>dsh-workbench-private-cloud</span><button id="refresh" class="ghost">刷新</button></footer>',
@@ -84,6 +91,12 @@ button.ghost{color:var(--muted)}
 .err{color:var(--warn);font-size:13px;min-height:20px;margin:8px 0 0}
 .foot{display:flex;justify-content:space-between;align-items:center;max-width:1080px;margin:8px auto 24px;padding:0 24px;color:var(--muted);font-size:12px}
 code{background:color-mix(in srgb,var(--fg) 8%,transparent);padding:1px 5px;border-radius:5px}
+.danger{border-color:color-mix(in srgb,var(--warn) 42%,var(--line))}
+.danger h2{color:var(--warn)}
+.scope{margin:8px 0 12px;padding-left:18px;color:var(--muted);font-size:13px;line-height:1.75}
+button.danger{border-color:var(--warn);color:var(--warn);background:transparent;font-weight:600}
+button.danger:disabled{opacity:.42;cursor:default}
+.err.ok{color:var(--ok)}
 `;
 
 const SCRIPT = `
@@ -153,6 +166,38 @@ const SCRIPT = `
   });
   els.input.addEventListener("keydown", function(e){ if(e.key === "Enter") document.getElementById("key-save").click(); });
   document.getElementById("refresh").addEventListener("click", load);
+
+  // 数据清空：确认词与 /v1/admin/clear 一致，按钮只有输入完全匹配后才可用。
+  var CLEAR_PHRASE = "清空云端数据";
+  var clearInput = document.getElementById("clear-input");
+  var clearGo = document.getElementById("clear-go");
+  var clearErr = document.getElementById("clear-err");
+  function syncClearButton(){ clearGo.disabled = clearInput.value.trim() !== CLEAR_PHRASE; }
+  clearInput.addEventListener("input", syncClearButton);
+  clearGo.addEventListener("click", function(){
+    if(clearInput.value.trim() !== CLEAR_PHRASE) return;
+    clearGo.disabled = true; clearErr.className = "err"; clearErr.textContent = "正在清空…";
+    fetch("/v1/admin/clear", {
+      method: "POST",
+      headers: { authorization: "Bearer " + key, "content-type": "application/json" },
+      body: JSON.stringify({ confirm: CLEAR_PHRASE })
+    }).then(function(r){
+      return r.json().catch(function(){ return null; }).then(function(d){ return { status: r.status, data: d }; });
+    }).then(function(res){
+      var d = res.data || {};
+      if(res.status === 200 && d.ok){
+        clearErr.className = "err ok";
+        clearErr.textContent = "已清空 " + d.rows + " 行数据、" + d.blobs + " 个文件；正在刷新统计…";
+        clearInput.value = "";
+        load();
+        return;
+      }
+      if(res.status === 401){ key = ""; localStorage.removeItem(STORE); showAuth("密钥不正确，请重新输入"); return; }
+      clearErr.textContent = d.error || ("清空失败（HTTP " + res.status + "）");
+    }).catch(function(e){ clearErr.textContent = "清空失败：" + e.message; })
+      .then(syncClearButton);
+  });
+
   load(); setInterval(function(){ if(key) load(); }, 15000);
 })();
 `;

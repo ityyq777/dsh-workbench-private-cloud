@@ -2,11 +2,14 @@
 // 私人云端命令行：start / stop / restart / status / logs / init / open。
 // 用 PID 文件与后台子进程管理服务，零依赖；服务本身仍是 src/index.js。
 import { spawn, execFileSync } from "node:child_process";
+import { createInterface } from "node:readline/promises";
 import { existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync, closeSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEnvFile } from "../src/env-file.js";
 import { loadConfig } from "../src/config.js";
+import { openDb } from "../src/db.js";
+import { CLEAR_CONFIRM, clearAllData } from "../src/admin.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ENTRY = path.join(ROOT, "src", "index.js");
@@ -24,6 +27,7 @@ const USAGE = `dsh-workbench-private-cloud ${VERSION}
   logs [--lines N] [-f] 查看日志（默认最近 50 行，-f 持续跟踪）
   init                  生成 .env（含随机密钥），不覆盖已有文件
   open                  在浏览器打开概览页
+  clear [--yes]         清空云端数据（服务运行中走接口，未运行直接清库；--yes 跳过确认）
   version               版本号
   help                  本帮助
 
@@ -36,6 +40,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "-f" || a === "--foreground") opts.flags.add("foreground");
+    else if (a === "-y" || a === "--yes") opts.flags.add("yes");
     else if (a === "-h" || a === "--help") opts.flags.add("help");
     else if (a === "--lines") opts.values.lines = argv[++i];
     else if (a === "--port") opts.values.port = argv[++i];
@@ -297,6 +302,70 @@ async function cmdOpen() {
   return 0;
 }
 
+/** 交互式确认：必须原样输入确认词；非交互环境要求显式 --yes。 */
+async function confirmClear(reason) {
+  if (!process.stdin.isTTY) {
+    console.error(reason + "\n非交互环境请显式加 --yes 确认。");
+    return false;
+  }
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question(reason + "\n此操作不可撤销。输入「" + CLEAR_CONFIRM + "」继续：");
+    return answer.trim() === CLEAR_CONFIRM;
+  } finally {
+    rl.close();
+  }
+}
+
+async function cmdClear(opts) {
+  const config = readConfig();
+  const dir = config.dataDir;
+  const base = baseUrl(config);
+  const pid = runningPid(dir);
+  const h = pid ? await health(base) : { ok: false };
+
+  if (pid && !h.ok) {
+    console.error("服务进程在运行（PID " + pid + "）但健康检查失败，请先 restart 或 stop 后再清空。");
+    return 1;
+  }
+
+  if (pid && h.ok) {
+    // 服务在运行时不能直接写库：两个进程同时写会撞锁，也让运行中的会话状态失效。
+    if (!opts.flags.has("yes") && !(await confirmClear("将清空私人云端（" + base + "）上的全部数据。"))) {
+      console.log("已取消");
+      return 1;
+    }
+    const res = await fetch(base + "/v1/admin/clear", {
+      method: "POST",
+      headers: { authorization: "Bearer " + config.secret, "content-type": "application/json" },
+      body: JSON.stringify({ confirm: CLEAR_CONFIRM }),
+      signal: AbortSignal.timeout(30000),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || !data.ok) {
+      console.error("清空失败：" + ((data && data.error) || "HTTP " + res.status));
+      return 1;
+    }
+    console.log("已清空云端数据：" + data.rows + " 行、" + data.blobs + " 个文件");
+    console.log("  数据目录：" + dir);
+    return 0;
+  }
+
+  if (!opts.flags.has("yes") && !(await confirmClear("服务未运行，将直接清空数据目录 " + dir + " 中的数据库。"))) {
+    console.log("已取消");
+    return 1;
+  }
+  const db = openDb(dir);
+  try {
+    const r = clearAllData(db, dir);
+    console.log("已清空云端数据：" + r.rows + " 行、" + r.blobs + " 个文件");
+    console.log("  数据目录：" + dir);
+    return 0;
+  } finally {
+    db.close();
+  }
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.flags.has("help") || opts.command === "help" || !opts.command) {
@@ -320,6 +389,8 @@ async function main() {
         return cmdInit();
       case "open":
         return await cmdOpen();
+      case "clear":
+        return await cmdClear(opts);
       case "version":
         console.log(VERSION);
         return 0;

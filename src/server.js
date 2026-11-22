@@ -8,6 +8,7 @@ import { createSync } from "./sync.js";
 import { ApiError, readJson, sendError, sendJson } from "./http.js";
 import { newId } from "./util.js";
 import { buildStats } from "./stats.js";
+import { CLEAR_CONFIRM, clearAllData } from "./admin.js";
 import { dashboardHtml } from "./dashboard.js";
 
 const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
@@ -74,7 +75,7 @@ export function createApp({ db, config, log = () => {} }) {
       }
       sendJson(res, 200, {
         ...health(),
-        endpoints: ["/v1/health", "/v1/me", "/v1/stats", "/v1/sync/*", "/v1/files/*"],
+        endpoints: ["/v1/health", "/v1/me", "/v1/stats", "/v1/sync/*", "/v1/files/*", "/v1/admin/clear"],
         dashboard: "用浏览器打开本地址可查看概览页",
       });
       return;
@@ -112,6 +113,18 @@ export function createApp({ db, config, log = () => {} }) {
     if (revoke && m === "DELETE") {
       db.prepare("DELETE FROM devices WHERE id=?").run(decodeURIComponent(revoke[1]));
       sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    // 数据清空：接口、概览页按钮与 CLI 共用同一套实现；确认词由调用方原样提交。
+    if (p === "/v1/admin/clear" && m === "POST") {
+      const body = await readJson(req, 64 * 1024);
+      if (String(body.confirm ?? "").trim() !== CLEAR_CONFIRM) {
+        throw new ApiError(400, "confirm_required", "请先输入「" + CLEAR_CONFIRM + "」确认", { confirm: CLEAR_CONFIRM });
+      }
+      const result = clearAllData(db, config.dataDir);
+      log("数据已清空", JSON.stringify({ rows: result.rows, blobs: result.blobs, devices: result.devices }));
+      sendJson(res, 200, result);
       return;
     }
 

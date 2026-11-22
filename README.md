@@ -44,6 +44,7 @@ node bin/wb-private-cloud.mjs logs -f   # 跟踪日志（默认最近 50 行，-
 node bin/wb-private-cloud.mjs restart   # 重启（改完配置或升级后最常用）
 node bin/wb-private-cloud.mjs stop      # 停止（10 秒不退则 SIGKILL）
 node bin/wb-private-cloud.mjs open      # 在浏览器打开概览页
+node bin/wb-private-cloud.mjs clear     # 清空云端数据（交互式输入确认词；--yes 跳过）
 ```
 
 - `start --foreground` 就是前台运行，等价于 `npm start`，适合调试；
@@ -52,7 +53,9 @@ node bin/wb-private-cloud.mjs open      # 在浏览器打开概览页
 - PID 文件与日志都在数据目录：`private-cloud.pid`、`private-cloud.log`；
 - `stop`/`status` 只读数据目录，即使 `.env` 缺密钥也能用（会提示健康检查失败但不报配置错）；
 - 端口被占用时 `start` 会直接失败并打印可读原因（不会留下 PID 文件或半启动进程）；
-- 退出码：`status` 运行且健康为 0、进程在但健康检查失败为 1、未运行为 3；`start` 已在运行为 1。
+- 退出码：`status` 运行且健康为 0、进程在但健康检查失败为 1、未运行为 3；`start` 已在运行为 1；
+- `clear` 优先走运行中的服务（`POST /v1/admin/clear`），服务没跑就直接打开库清空，避免两个进程同时写；
+  非交互环境（定时任务、CI）必须显式加 `--yes`，否则会直接拒绝而不是静默清空。
 
 ## 浏览器概览页
 
@@ -66,6 +69,9 @@ node bin/wb-private-cloud.mjs open      # 在浏览器打开概览页
 
 页面本身是静态外壳，数据由 `GET /v1/stats` 提供，密钥只存在浏览器 localStorage 里，不写进 HTML；
 每 15 秒自动刷新一次。需要给机器或脚本看数据时，直接用 `/v1/health` 与 `/v1/stats` 即可。
+
+页面底部的「数据清空」卡片与 CLI `clear` 等价：输入确认词「清空云端数据」后按钮才可用，
+清空成功会提示清掉多少行与多少个文件，并立即刷新统计。
 
 ## 环境变量
 
@@ -92,6 +98,7 @@ node bin/wb-private-cloud.mjs open      # 在浏览器打开概览页
 | GET    | `/v1/me`                        | 单用户信息、已登记设备、存储配额         |
 | GET    | `/v1/stats`                     | 概览页用的统计快照（设备、数据表、变更） |
 | DELETE | `/v1/devices/:id`               | 移除一台设备记录                         |
+| POST   | `/v1/admin/clear`               | 清空云端数据 `{confirm:"清空云端数据"}`  |
 | POST   | `/v1/sync/open`                 | 打开同步会话 `{protocol:2,device_id}`    |
 | POST   | `/v1/sync/push`                 | 推送变更（最多 500 条/批）               |
 | POST   | `/v1/sync/pull`                 | 按表游标拉取变更                         |
@@ -146,6 +153,22 @@ location / {
 ```
 
 反向代理之后记得设置 `WB_PRIVATE_TRUST_PROXY=1`，这样鉴权失败的限流才按真实客户端 IP 计算。
+
+## 数据清空
+
+`POST /v1/admin/clear`（CLI `clear`、概览页按钮）清掉这台服务上的全部业务数据：
+
+- 表：`change_log`、`row_states`、`sync_table_state`、`sync_sessions`、`devices`、`blob_refs`、`blobs`；
+- 磁盘：数据目录下的 `blobs/` 与 `tmp/` 整个删除后重建；
+- `meta` 只保留 `instance_id`（服务身份不变，宿主不用重新绑定），并写入 `last_clear_at`。
+
+确认词必须原样传 `"清空云端数据"`，否则 400 `confirm_required`；成功返回
+`{ok:true, tables, rows, blobs, devices, cleared_at}`，重复调用是幂等的（第二次为 0）。
+清空不删库文件、不改端口与密钥，也不影响其它实例。
+
+注意：清空后，**仍连着这台云端的宿主会在下一轮同步把本地数据重新推上来**
+（树形表会走整表重置），所以「本机也要清」时请在宿主侧先清空并断开云端，
+顺序是「宿主清空 → 云端清空」，或者反过来清空云端后不要再让旧数据上传。
 
 ## 备份与恢复
 
