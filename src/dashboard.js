@@ -1,7 +1,38 @@
 // 浏览器概览页：服务端渲染一个静态外壳，数据由页面内脚本带密钥拉取 /v1/stats。
 // 不引入任何外部依赖与 CDN，颜色跟随系统深浅色。
+import { accessInfo } from "./access.js";
 
 const KEY_STORAGE = "wb-private-cloud-key";
+
+/** 连接方式卡片：服务端算好地址（本机 + 各局域网网卡），不依赖密钥就可见，方便照着在手机上打开。 */
+function accessCard(config) {
+  const access = accessInfo(config);
+  const rows = [{ label: "本机连接", tag: "本机", url: access.local }];
+  for (const item of access.lan) rows.push({ label: "局域网连接", tag: item.virtual ? item.interface + " · 虚拟" : item.interface, url: item.url });
+  const lines = [
+    '<section class="card access" id="access">',
+    "<h2>连接方式</h2>",
+    ...rows.map(
+      (row) =>
+        '<div class="access-row"><span class="access-label">' +
+        escapeHtml(row.label) +
+        '</span><code class="access-url">' +
+        escapeHtml(row.url) +
+        '</code><span class="access-iface">' +
+        escapeHtml(row.tag) +
+        '</span><button class="copy" type="button" data-copy="' +
+        escapeHtml(row.url) +
+        '">复制</button></div>',
+    ),
+    access.override
+      ? '<p class="hint">局域网地址来自 <code>WB_PRIVATE_PUBLIC_HOST</code>（手动指定），不是网卡自动探测的结果。</p>'
+      : access.lan.length
+        ? '<p class="hint">手机与电脑连同一个 Wi-Fi 后，用「局域网连接」地址打开即可。打不开时先检查路由器是否开了 AP 隔离或访客网络，以及本机防火墙是否放行该端口。</p>'
+        : '<p class="hint">没有探测到局域网 IPv4 地址（可能只连着 VPN 或网卡还没就绪）。可在 <code>.env</code> 里用 <code>WB_PRIVATE_PUBLIC_HOST</code> 手动指定对外地址。</p>',
+    "</section>",
+  ];
+  return lines.join("\n");
+}
 
 export function dashboardHtml(config) {
   const title = "私人云端 · " + config.serverName;
@@ -20,6 +51,7 @@ export function dashboardHtml(config) {
     '<div class="meta"><span id="uptime">—</span><span id="server-time">—</span></div>',
     "</header>",
     '<main id="main">',
+    accessCard(config),
     '<section class="card auth" id="auth-card" hidden>',
     "<h2>输入访问密钥</h2>",
     '<p class="hint">密钥就是服务端启动时的 <code>WB_PRIVATE_SECRET</code>。只保存在本浏览器的 localStorage 里。</p>',
@@ -56,6 +88,7 @@ const CSS = `
 :root{color-scheme:light dark;--bg:#f6f7f9;--fg:#1b1f24;--muted:#6a7280;--card:#fff;--line:#e3e6ea;--accent:#0f9b8e;--warn:#c2410c;--ok:#0f9b8e}
 @media (prefers-color-scheme:dark){:root{--bg:#14171a;--fg:#e6e9ec;--muted:#9aa3ad;--card:#1b1f24;--line:#2a3037;--accent:#2dd4bf}}
 *{box-sizing:border-box}
+[hidden]{display:none !important}
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
 .top{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid var(--line);background:var(--card)}
 .brand{display:flex;align-items:center;gap:10px}
@@ -69,6 +102,13 @@ main{max-width:1080px;margin:0 auto;padding:20px 24px 8px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
 .card.wide{grid-column:1/-1}
 .card h2{font-size:13px;margin:0 0 12px;color:var(--muted);font-weight:600;letter-spacing:.02em}
+.access{margin-bottom:16px}
+.access-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:7px 0;border-bottom:1px dashed var(--line)}
+.access-row:last-of-type{border-bottom:0}
+.access-label{color:var(--muted);font-size:12px;min-width:64px}
+.access-url{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;overflow-wrap:anywhere}
+.access-iface{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 7px}
+button.copy{margin-left:auto;font-size:12px;padding:4px 10px}
 table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);font-size:13px}
 th{color:var(--muted);font-weight:500;white-space:nowrap}
@@ -166,6 +206,27 @@ const SCRIPT = `
   });
   els.input.addEventListener("keydown", function(e){ if(e.key === "Enter") document.getElementById("key-save").click(); });
   document.getElementById("refresh").addEventListener("click", load);
+
+  // 复制连接地址：局域网是 http 明文，navigator.clipboard 在非安全上下文不可用，需要回退到 execCommand。
+  function copyText(text, done){
+    function legacy(){
+      var ta = document.createElement("textarea");
+      ta.value = text; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(); } catch(e) { /* 复制失败不影响页面其它功能 */ }
+      ta.remove();
+    }
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, legacy);
+    else legacy();
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("button.copy"), function(btn){
+    btn.addEventListener("click", function(){
+      copyText(btn.getAttribute("data-copy") || "", function(){
+        btn.textContent = "已复制";
+        setTimeout(function(){ btn.textContent = "复制"; }, 1500);
+      });
+    });
+  });
 
   // 数据清空：确认词与 /v1/admin/clear 一致，按钮只有输入完全匹配后才可用。
   var CLEAR_PHRASE = "清空云端数据";

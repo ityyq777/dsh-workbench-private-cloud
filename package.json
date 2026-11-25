@@ -1,6 +1,6 @@
 {
   "name": "dsh-workbench-private-cloud",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "DSH Workbench 私人云端：单用户、多设备数据同步（协议 v2），零依赖 Node.js 服务",
   "type": "module",
   "main": "src/index.js",

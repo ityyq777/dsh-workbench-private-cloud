@@ -10,6 +10,7 @@ import { loadEnvFile } from "../src/env-file.js";
 import { loadConfig } from "../src/config.js";
 import { openDb } from "../src/db.js";
 import { CLEAR_CONFIRM, clearAllData } from "../src/admin.js";
+import { accessInfo } from "../src/access.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ENTRY = path.join(ROOT, "src", "index.js");
@@ -31,9 +32,10 @@ const USAGE = `dsh-workbench-private-cloud ${VERSION}
   version               版本号
   help                  本帮助
 
-通用选项：--port <端口> --data <目录> --bind <地址> --name <名称>
-  也可以直接用环境变量 WB_PRIVATE_PORT / WB_PRIVATE_DATA / WB_PRIVATE_BIND / WB_PRIVATE_SERVER_NAME，
-  或写在当前目录的 .env 里。`;
+通用选项：--port <端口> --data <目录> --bind <地址> --name <名称> --public-host <主机>
+  也可以直接用环境变量 WB_PRIVATE_PORT / WB_PRIVATE_DATA / WB_PRIVATE_BIND / WB_PRIVATE_SERVER_NAME /
+  WB_PRIVATE_PUBLIC_HOST，或写在当前目录的 .env 里。--public-host 用来覆盖概览页上展示的局域网地址
+  （默认自动探测网卡，反代或固定域名时手填）。`;
 
 function parseArgs(argv) {
   const opts = { flags: new Set(), values: {} };
@@ -47,6 +49,7 @@ function parseArgs(argv) {
     else if (a === "--data") opts.values.data = argv[++i];
     else if (a === "--bind") opts.values.bind = argv[++i];
     else if (a === "--name") opts.values.name = argv[++i];
+    else if (a === "--public-host") opts.values.publicHost = argv[++i];
     else if (a.startsWith("-")) throw new Error("未知选项：" + a);
     else if (!opts.command) opts.command = a;
     else throw new Error("多余的参数：" + a);
@@ -59,6 +62,7 @@ function applyOverrides(opts) {
   if (opts.values.data) process.env.WB_PRIVATE_DATA = String(opts.values.data);
   if (opts.values.bind) process.env.WB_PRIVATE_BIND = String(opts.values.bind);
   if (opts.values.name) process.env.WB_PRIVATE_SERVER_NAME = String(opts.values.name);
+  if (opts.values.publicHost) process.env.WB_PRIVATE_PUBLIC_HOST = String(opts.values.publicHost);
 }
 
 /** 先补齐 .env（当前目录优先，再补仓库根），并让数据目录默认落在包内，避免随 cwd 漂移。 */
@@ -154,6 +158,19 @@ async function waitHealthy(config, timeoutMs) {
   return null;
 }
 
+/** 打印本机与局域网两种连接地址；概览页上也有同样的「连接方式」卡片。 */
+function printAccess(config) {
+  const access = accessInfo(config);
+  console.log("  本机连接：" + access.local + "/");
+  if (access.lan.length) {
+    for (const item of access.lan) {
+      console.log("  局域网连接：" + item.url + "/（" + item.interface + (item.virtual ? "，虚拟网卡" : "") + "）");
+    }
+  } else {
+    console.log("  局域网连接：未探测到可用网卡，可用 WB_PRIVATE_PUBLIC_HOST 手动指定");
+  }
+}
+
 async function cmdStart(opts) {
   const config = readConfig();
   const running = runningPid(config.dataDir);
@@ -198,7 +215,7 @@ async function cmdStart(opts) {
     return 1;
   }
   console.log("已启动（PID " + child.pid + "）：" + baseUrl(config));
-  console.log("  概览页：" + baseUrl(config) + "/");
+  printAccess(config);
   console.log("  数据：" + config.dataDir);
   console.log("  日志：" + log);
   return 0;
@@ -251,10 +268,10 @@ async function cmdStatus() {
   const label = pid && h.ok ? "运行中" : pid ? "进程在、健康检查失败" : h.ok ? "运行中（未由 CLI 管理，缺少 PID 文件）" : "未运行";
   console.log("状态：" + label);
   if (pid) console.log("  PID：" + pid);
-  if (base) console.log("  地址：" + base);
+  if (base && !h.ok) console.log("  地址：" + base);
   if (h.ok) {
     console.log("  服务：" + (h.server_name ?? "-") + " v" + (h.version ?? "-") + "（协议 " + (h.protocol ?? "-") + "）");
-    console.log("  概览页：" + base + "/");
+    printAccess(config);
   } else if (h.error) {
     console.log("  健康检查：" + h.error);
   }
@@ -295,10 +312,15 @@ function cmdInit() {
 
 async function cmdOpen() {
   const config = readConfig();
-  const url = baseUrl(config) + "/";
+  const access = accessInfo(config);
+  const target = baseUrl(config) + "/";
   const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-  spawn(opener, [url], { stdio: "ignore", detached: true }).unref();
-  console.log("已在浏览器打开：" + url);
+  spawn(opener, [target], { stdio: "ignore", detached: true }).unref();
+  console.log("已在浏览器打开：" + target);
+  // 顺手把局域网地址打出来，方便直接抄到手机上。
+  if (access.lan.length) {
+    for (const item of access.lan) console.log("  手机可用（同一 Wi-Fi）：" + item.url + "/（" + item.interface + "）");
+  }
   return 0;
 }
 

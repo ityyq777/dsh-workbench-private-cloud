@@ -50,6 +50,10 @@ node bin/wb-private-cloud.mjs clear     # 清空云端数据（交互式输入�
 - `start --foreground` 就是前台运行，等价于 `npm start`，适合调试；
 - 端口、数据目录、监听地址、服务名称都可以用通用选项覆盖：
   `--port 8792 --data ./data --bind 0.0.0.0 --name "我的云端"`，或对应环境变量，或 `.env`；
+- `--public-host <主机名或 IP>`（或 `WB_PRIVATE_PUBLIC_HOST`）用来覆盖页面与 CLI 展示的「局域网连接」
+  地址：默认按网卡自动探测，反向代理或固定域名时手填；
+- `start`、`status`、`open` 都会打印两种地址：「本机连接」`http://127.0.0.1:端口` 与
+  「局域网连接」`http://局域网IP:端口`，后者可以直接抄到同一 Wi-Fi 下的手机浏览器；
 - PID 文件与日志都在数据目录：`private-cloud.pid`、`private-cloud.log`；
 - `stop`/`status` 只读数据目录，即使 `.env` 缺密钥也能用（会提示健康检查失败但不报配置错）；
 - 端口被占用时 `start` 会直接失败并打印可读原因（不会留下 PID 文件或半启动进程）；
@@ -61,6 +65,8 @@ node bin/wb-private-cloud.mjs clear     # 清空云端数据（交互式输入�
 
 启动后用浏览器直接打开服务地址（例如 `http://127.0.0.1:8792/`），输入访问密钥即可看到：
 
+- **连接方式**：本机地址与各网卡探测到的局域网地址（带「复制」按钮，不需要先输密钥就能看到）；
+  手机与电脑连同一个 Wi-Fi 后，直接打开「局域网连接」那条即可，打不开时先排查路由器的 AP 隔离/访客网络；
 - 运行时长、版本、当前同步会话；
 - 存储用量（已用/配额进度条、文件数、业务引用数、单文件上限）；
 - 设备列表（名称、设备 ID、最后同步时间、累计变更数）；
@@ -82,6 +88,7 @@ node bin/wb-private-cloud.mjs clear     # 清空云端数据（交互式输入�
 | `WB_PRIVATE_PORT`                 | `8792`         | 监听端口                                                 |
 | `WB_PRIVATE_DATA`                 | `./data`       | 数据目录（数据库、blob、临时文件）                       |
 | `WB_PRIVATE_SERVER_NAME`          | `我的私人云端` | 在宿主里显示的云端名称                                   |
+| `WB_PRIVATE_PUBLIC_HOST`          | 空（自动探测） | 覆盖页面/CLI 展示的局域网地址，只填主机名或 IP，不带协议与路径 |
 | `WB_PRIVATE_MAX_FILE_BYTES`       | `209715200`    | 单文件上限，默认 200 MB                                  |
 | `WB_PRIVATE_QUOTA_BYTES`          | `21474836480`  | 总配额，默认 20 GB                                       |
 | `WB_PRIVATE_SESSION_TTL_SECONDS`  | `300`          | 同步会话有效期（秒），实际会夹到 10..600                 |

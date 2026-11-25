@@ -6,6 +6,7 @@ import { loadEnvFile } from "./env-file.js";
 import { loadConfig } from "./config.js";
 import { openDb } from "./db.js";
 import { createApp } from "./server.js";
+import { accessInfo } from "./access.js";
 
 function main() {
   // 先看当前目录的 .env（`node src/index.js` 与 `npm start` 都落在仓库根），再按需读入口同级目录。
@@ -46,8 +47,11 @@ function main() {
 
   server.listen(config.port, config.host, () => {
     const shown = config.host === "0.0.0.0" ? "本机所有网卡" : config.host;
+    const access = accessInfo(config);
     console.log("DSH Workbench 私人云端已启动");
     console.log("  监听：" + config.host + ":" + config.port + "（" + shown + "）");
+    console.log("  本机连接：" + access.local);
+    for (const item of access.lan) console.log("  局域网连接：" + item.url + "（" + item.interface + "）");
     console.log("  数据：" + config.dataDir);
     console.log("  名称：" + config.serverName);
     console.log("  单文件上限：" + Math.round(config.maxFileBytes / 1024 / 1024) + " MB，配额：" + Math.round(config.quotaBytes / 1024 / 1024 / 1024) + " GB");

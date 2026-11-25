@@ -42,6 +42,8 @@ export function loadConfig(env = process.env) {
     secret,
     dataDir: path.resolve(String(env.WB_PRIVATE_DATA ?? "./data")),
     serverName: String(env.WB_PRIVATE_SERVER_NAME ?? "我的私人云端").trim() || "我的私人云端",
+    // 概览页/CLI 展示的「局域网连接」地址；默认自动探测网卡，反代或固定域名场景可手工指定。
+    publicHost: String(env.WB_PRIVATE_PUBLIC_HOST ?? "").trim(),
     maxFileBytes: intEnv(env, "WB_PRIVATE_MAX_FILE_BYTES", 200 * 1024 * 1024),
     quotaBytes: intEnv(env, "WB_PRIVATE_QUOTA_BYTES", 20 * 1024 * 1024 * 1024),
     sessionTtlMs: intEnv(env, "WB_PRIVATE_SESSION_TTL_SECONDS", 300) * 1000,
@@ -56,6 +58,9 @@ export function loadConfig(env = process.env) {
   if (config.maxFileBytes < 1) problems.push("WB_PRIVATE_MAX_FILE_BYTES 必须大于 0");
   if (config.quotaBytes < config.maxFileBytes) problems.push("WB_PRIVATE_QUOTA_BYTES 不能小于单文件上限");
   if (config.sessionTtlMs < 30_000) problems.push("同步会话 TTL 不能短于 30 秒");
+  if (config.publicHost && (/:\/\//.test(config.publicHost) || /[\/\s]/.test(config.publicHost))) {
+    problems.push("WB_PRIVATE_PUBLIC_HOST 只填主机名或 IP，不要带 http:// 与路径");
+  }
   if (problems.length) {
     const err = new Error("私人云端配置有误：\n- " + problems.join("\n- "));
     err.code = "invalid_config";

@@ -47,6 +47,11 @@ test("start/status/restart/stop 完整生命周期", async () => {
     assert.equal(status.code, 0);
     assert.match(status.stdout, /运行中/);
     assert.match(status.stdout, /我的私人云端/);
+    // 状态里要给出两种连接方式；局域网地址用 --public-host 固定，避免依赖真实网卡。
+    assert.match(status.stdout, new RegExp("本机连接：http://127\\.0\\.0\\.1:" + f.port));
+    const lan = await cli(["status", "--public-host", "192.168.1.50"], f.env);
+    assert.equal(lan.code, 0);
+    assert.match(lan.stdout, new RegExp("局域网连接：http://192\\.168\\.1\\.50:" + f.port));
 
     const again = await cli(["start"], f.env);
     assert.equal(again.code, 1);
